@@ -3,70 +3,85 @@ from multiprocessing import BoundedSemaphore, Semaphore, Lock
 from multiprocessing import current_process
 from multiprocessing import Value, Array
 from time import sleep
-from random import random
+from random import random, randint
 
-NPROD = 5
-N = 10
+NPROD = 2
+N = 5
 
 def delay(factor = 3):
     sleep(random()/factor)
 
-def add_data(storage, proc_id, data, mutex):
+def add_data(storage, proc_id, valor, mutex):
     mutex.acquire()
     try:
-        storage[proc_id] = proc_id*100 + data
+        valor = valor + randint(0,9)
+        storage[proc_id] = valor
         delay(6)
-        print('Storage: ', storage[proc_id])
     finally:
         mutex.release()
 
-def producer(storage, empty, non_empty, mutex):
+    return valor
+
+def producer(storage, empty, non_empty, mutex, status):
+    valor = randint(0,9)
+
     for v in range(N):
         print(f'producer {current_process().name} produciendo')
         delay(6)
         empty.acquire()
-        add_data(storage, int(current_process().name.split('_')[1]), v, mutex)
+        valor = add_data(storage, int(current_process().name.split('_')[1]), valor, mutex)
         non_empty.release()
-        print(f'producer {current_process().name} almacenado {v}')
+        print(f'producer {current_process().name} almacenado {valor}')
 
-def get_data(storage, mutex):
+    empty.acquire()
+    status[int(current_process().name.split('_')[1])] = False
+    
+def get_data(storage, mutex, status):
     mutex.acquire()
     try:
-        for i in range(NPROD):
-            print('Storage: ', storage[i])
-
         data = 5000000
         prod_id = -1
         for i in range(NPROD):
-            if storage[i] < data:
+            if storage[i] < data and status[i]:
                 data = storage[i]
                 prod_id = i
         storage[prod_id] = -1
 
     finally:
-        mutex.release
+        mutex.release()
 
     return (data, prod_id)
 
-def consumer(storage, emptyList, non_emptyList, mutex):
+def consumer(storage, emptyList, non_emptyList, mutex, status):
+    datos = []
+
     for i in range(NPROD):
         non_emptyList[i].acquire()
 
-    print('consumidor desalmacenando')
-    (dato, prod_id) = get_data(storage, mutex)
+    while any(elem for elem in status):
 
-    print('PATATA ', prod_id)
-    emptyList[prod_id].release()
+        print('consumidor desalmacenando')
+        (dato, prod_id) = get_data(storage, mutex, status)
+        datos.append(dato)
 
-    print(f'consumidor ha consumido {dato} del productor {prod_id}')
+        emptyList[prod_id].release()
+
+        print(f'consumidor ha consumido {dato} del productor {prod_id}')
+
+        if status[prod_id]:
+            non_emptyList[prod_id].acquire()
+    
+    print('datos consumidos: ', datos)
 
 
 
 def main():
     storage = Array('i', NPROD)
+    status = Array('i', NPROD)
 
     for i in range(NPROD):
         storage[i] = -1
+        status[i] = True
     print('almacen inicial: ', storage[:])
 
     non_empty = [Semaphore(0) for i in range(NPROD)]
@@ -75,12 +90,12 @@ def main():
 
     prodList = [Process(target=producer,
                         name=f'prod_{i}',
-                        args=(storage, empty[i], non_empty[i], mutex))
+                        args=(storage, empty[i], non_empty[i], mutex, status))
                 for i in range(NPROD)]
 
     consum = Process(target=consumer,
                      name='consumidor',
-                     args=(storage, empty, non_empty, mutex))
+                     args=(storage, empty, non_empty, mutex, status))
 
     for p in prodList + [consum]:
         p.start()

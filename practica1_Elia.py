@@ -5,7 +5,7 @@ from multiprocessing import Value, Array
 from time import sleep
 from random import random, randint
 
-NPROD = 2
+NPROD = 3
 N = 5
 
 def delay(factor = 3):
@@ -22,7 +22,7 @@ def add_data(storage, proc_id, valor, mutex):
 
     return valor
 
-def producer(storage, empty, non_empty, mutex, status):
+def producer(storage, empty, non_empty, mutex):
     valor = randint(0,9)
 
     for v in range(N):
@@ -34,18 +34,20 @@ def producer(storage, empty, non_empty, mutex, status):
         print(f'producer {current_process().name} almacenado {valor}')
 
     empty.acquire()
-    status[int(current_process().name.split('_')[1])] = False
+    storage[int(current_process().name.split('_')[1])] = -1
+    non_empty.release()
     
 def get_data(storage, mutex, status):
     mutex.acquire()
     try:
-        data = 5000000
+        data = -1
         prod_id = -1
         for i in range(NPROD):
-            if storage[i] < data and status[i]:
+            if storage[i] == -1:
+                status[i] = False
+            elif storage[i] < data or data == -1:
                 data = storage[i]
                 prod_id = i
-        storage[prod_id] = -1
 
     finally:
         mutex.release()
@@ -62,7 +64,8 @@ def consumer(storage, emptyList, non_emptyList, mutex, status):
 
         print('consumidor desalmacenando')
         (dato, prod_id) = get_data(storage, mutex, status)
-        datos.append(dato)
+        if dato != -1:
+            datos.append(dato)
 
         emptyList[prod_id].release()
 
@@ -90,7 +93,7 @@ def main():
 
     prodList = [Process(target=producer,
                         name=f'prod_{i}',
-                        args=(storage, empty[i], non_empty[i], mutex, status))
+                        args=(storage, empty[i], non_empty[i], mutex))
                 for i in range(NPROD)]
 
     consum = Process(target=consumer,

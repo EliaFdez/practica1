@@ -43,11 +43,12 @@ def get_data(storage, mutex, status):
         data = -1
         prod_id = -1
         for i in range(NPROD):
-            if storage[i] == -1:
-                status[i] = False
-            elif storage[i] < data or data == -1:
-                data = storage[i]
-                prod_id = i
+            if status[i]:
+                if storage[i] == -1:
+                    status[i] = False
+                elif storage[i] < data or data == -1:
+                    data = storage[i]
+                    prod_id = i
 
     finally:
         mutex.release()
